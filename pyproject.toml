@@ -10,6 +10,7 @@ dependencies = [
     "djangorestframework-simplejwt>=5.5.1",
     "pillow>=12.1.1",
     "psycopg[binary]>=3.3.3",
+    "weaviate-client>=4.20.4",
 ]
 
 [dependency-groups]
