@@ -15,6 +15,7 @@ class RegisterApiView(APIView):
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+
 class ProfileApiview(APIView):
     permission_classes = [IsAuthenticated]
     def get(self, request):
@@ -36,7 +37,9 @@ class LoginApiView(APIView):
 
         refresh = RefreshToken.for_user(user)
 
-        return Response({
-                "refresh": str(refresh),
-                "access": str(refresh.access_token),
-            })
+        data = {
+            "refresh": str(refresh),
+            "access": str(refresh.access_token),
+        }
+
+        return Response(data, status=status.HTTP_200_OK)

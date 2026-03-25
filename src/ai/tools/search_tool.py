@@ -14,7 +14,7 @@ def search_documentation_tool(query: str, user_id: int):
 
     for i, res in enumerate(results, 1):
 
-        output += f"--- Фрагмент {i} (Файл: {res['file_name']}) ---\n"
-        output += f"{res['content']}\n\n"
+        output += f"--- Фрагмент {i} (Файл: {res['file_name']})"
+        context = f"{res['content']}"
 
-    return output
+    return output, context

@@ -1,6 +1,7 @@
 import uuid
 import requests as http
 from .chunking import chunk_text
+import weaviate
 
 NAMESPACE = uuid.UUID("12345678-1234-5678-1234-567812345678")
 
@@ -32,7 +33,6 @@ class WeaviateRAGService:
 
     def index_document(self, text: str, file_name: str, user_id: str) -> list[str]:
         chunks = chunk_text(text)
-        uuids = []
         for i, chunk in enumerate(chunks):
             generated_uuid = self._make_uuid(file_name, i, user_id)
             resp = http.post(f"{self.base}/v1/objects", json={
@@ -42,15 +42,15 @@ class WeaviateRAGService:
                     "content":   chunk,
                     "file_name": file_name,
                     "chunk_id":  i,
-                    "user_id":   user_id,
+                    "user_id":   str(user_id),
                 },
             })
             if resp.status_code not in (200, 201):
                 raise RuntimeError(f"Weaviate error: {resp.status_code} {resp.text}")
-            uuids.append(generated_uuid)
-        return uuids
 
-    def search(self, query: str, user_id: str, limit: int = 3) -> list[dict]:
+        return i
+
+    def search(self, query: str, user_id: str, limit: int = 1) -> list[dict]:
         resp = http.post(f"{self.base}/v1/graphql", json={
             "query": f"""
             {{
