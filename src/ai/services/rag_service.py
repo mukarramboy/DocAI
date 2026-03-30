@@ -68,7 +68,7 @@ class WeaviateRAGService:
                     uuid=obj_uuid,
                 )
 
-        return len(chunks)
+        return i
 
     # Поиск по семантическому сходству с фильтром по пользователю и порогу distance
     def search(self, query: str, user_id: str, limit: int = 3, max_distance: float = 0.4):
