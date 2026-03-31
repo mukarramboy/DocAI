@@ -1,116 +1,87 @@
-import uuid
 import weaviate
-from .chunking import chunk_text
-
-NAMESPACE = uuid.UUID("12345678-1234-5678-1234-567812345678")
-
+from weaviate.classes.config import Property, DataType
+from weaviate.classes.config import Configure
 
 class WeaviateRAGService:
-    COLLECTION = "Documentation"
+    def __init__(self, collection_name: str = "documents"):
+        self.weavclient = weaviate.connect_to_local()
+        self.collection_name = collection_name
 
-    def __init__(self, weaviate_url: str = "http://localhost:8080"):
-        # создаём клиент Weaviate
-        self.client = weaviate.Client(weaviate_url)
         self._setup_collection()
 
-    # Генерация UUID для каждого чанка документа
-    def _make_uuid(self, file_name: str, chunk_id: int, user_id: str) -> str:
-        return str(uuid.uuid5(NAMESPACE, f"{user_id}:{file_name}:{chunk_id}"))
-
-    # Создание класса в Weaviate, если его нет
     def _setup_collection(self):
-        schema = self.client.schema.get()
-        classes = [c["class"] for c in schema.get("classes", [])]
-
-        if self.COLLECTION not in classes:
-            self.client.schema.create_class({
-                "class": self.COLLECTION,
-                "vectorizer": "text2vec-transformers",
-                "properties": [
-                    {"name": "content", "dataType": ["text"]},
-                    {
-                        "name": "file_name",
-                        "dataType": ["text"],
-                        "moduleConfig": {"text2vec-transformers": {"skip": True}},
-                    },
-                    {
-                        "name": "chunk_id",
-                        "dataType": ["int"],
-                        "moduleConfig": {"text2vec-transformers": {"skip": True}},
-                    },
-                    {
-                        "name": "user_id",
-                        "dataType": ["text"],
-                        "moduleConfig": {"text2vec-transformers": {"skip": True}},
-                    },
+        try:
+            if  self.weavclient.collections.exists(self.collection_name):
+                return
+            self.weavclient.collections.create(
+                name=self.collection_name,
+                vectorizer_config=Configure.Vectorizer.text2vec_transformers(),
+                properties=[
+                    Property(
+                        name="content",
+                        data_type=DataType.TEXT,
+                        description="The text content of the documentation chunk",
+                    ),
+                    Property(
+                        name="filename",
+                        data_type=DataType.TEXT,
+                        description="Source filename of the documentation chunk",
+                        skip_vectorization=True,
+                    ),
+                    Property(
+                        name="chank_id",
+                        data_type=DataType.INT,
+                        description="Chunk number within the file",
+                        skip_vectorization=True,
+                    ),
+                    Property(
+                        name="user_id",
+                        data_type=DataType.TEXT,
+                        description="User ID who uploaded the document",
+                        skip_vectorization=True,
+                    ),
                 ],
-            })
+            )
 
-    # Индексация документа с разделением на чанки и использованием batch
+            print(f"Collection {self.collection_name} created successfully")
+        except Exception as e:
+            print(f"Error setting up collection: {e}")
+            raise
+
+    def chunk_text(self,text: str, chunk_size: int = 300, overlap: int = 50):
+
+        words = text.split()
+        chunks = []
+
+        step = chunk_size - overlap
+
+        for i in range(0, len(words), step):
+            chunk = " ".join(words[i:i + chunk_size])
+
+            if chunk.strip():
+                chunks.append(chunk)
+
+        return chunks
+
     def index_document(self, text: str, file_name: str, user_id: str):
-        chunks = chunk_text(text)
+        collection = self.weavclient.collections.get(self.collection_name)
+        total_count = 0
 
-        with self.client.batch as batch:
-            batch.batch_size = 50  # можно менять под нагрузку
-            batch.timeout_retries = 3
+        try:
+            chunks = self.chunk_text(text)
+            with collection.batch.dynamic() as batch:
+                for i, chunk in enumerate(chunks):
+                    batch.add_object(
+                        properties={
+                            "content": chunk,
+                            "filename": filename,
+                            "chunk_id": i,
+                            "user_id": user_id
+                        }
+                    )
+                    total_count += 1
+        except Exception as e:
+            print(f"Error indexing document: {e}")
+            raise
 
-            for i, chunk in enumerate(chunks):
-                obj_uuid = self._make_uuid(file_name, i, user_id)
-
-                batch.add_data_object(
-                    data_object={
-                        "content": chunk,
-                        "file_name": file_name,
-                        "chunk_id": i,
-                        "user_id": str(user_id),
-                    },
-                    class_name=self.COLLECTION,
-                    uuid=obj_uuid,
-                )
-
-        return i
-
-    # Поиск по семантическому сходству с фильтром по пользователю и порогу distance
-    def search(self, query: str, user_id: str, limit: int = 3, max_distance: float = 0.4):
-        result = (
-            self.client.query
-            .get(self.COLLECTION, ["content", "file_name", "chunk_id"])
-            .with_near_text({"concepts": [query]})
-            .with_where({
-                "path": ["user_id"],
-                "operator": "Equal",
-                "valueText": str(user_id),
-            })
-            .with_additional(["distance"])
-            .with_limit(limit * 5)  # берём больше, чтобы потом фильтровать по distance
-            .do()
-        )
-
-        objects = result["data"]["Get"].get(self.COLLECTION, [])
-
-        # фильтруем по max_distance и лимиту
-        filtered = [
-            {
-                "content": obj["content"],
-                "file_name": obj["file_name"],
-                "chunk_id": obj["chunk_id"],
-                "distance": obj["_additional"]["distance"],
-            }
-            for obj in objects
-            if obj["_additional"]["distance"] <= max_distance
-        ]
-
-        return filtered[:limit]
-
-    # Удаление документа по file_name и user_id
-    def delete_document(self, file_name: str, user_id: str):
-        self.client.batch.delete_objects(
-            class_name=self.COLLECTION,
-            where={
-                "operator": "And",
-                "operands": [
-                    {"path": ["file_name"], "operator": "Equal", "valueText": file_name},
-                    {"path": ["user_id"], "operator": "Equal", "valueText": str(user_id)},
-                ],
-            },
-        )
+        return total_count

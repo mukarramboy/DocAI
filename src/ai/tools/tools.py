@@ -74,6 +74,9 @@ def edit_file(input_data):
     except Exception as e:
         return "", str(e)
 
+def search_chunk():
+    pass
+
 
 class ReadFileInput(BaseModel):
     path: str = Field(
@@ -98,6 +101,13 @@ class EditFileInput(BaseModel):
     new_str: str = Field(description="Text to replace old_str with.")
 
 
+class SearchChunkInput(BaseModel):
+    query: str = Field(description="The search query to find relevant chunks.")
+    user_id: Optional[str] = Field(
+        description="The user ID of the requester. Optional, but recommended for tracking.",
+        default=None,
+    )
+
 read_file_definition = ToolDefinition(
     name="read_file",
     description="Read the contents of a given relative file path. Use this when you want to see what's inside a file. Do not use this with directory names.",
@@ -120,4 +130,11 @@ edit_file_definition = ToolDefinition(
     """,
     input_schema=EditFileInput.model_json_schema(),
     function=edit_file,
+)
+
+search_chunk_definition = ToolDefinition(
+    name="search_chunk",
+    description="Search for relevant chunks of text in the document store based on a query of user_id .",
+    input_schema=SearchChunkInput.model_json_schema(),
+    function=search_chunk,
 )
