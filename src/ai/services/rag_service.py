@@ -1,19 +1,20 @@
 import weaviate
 from weaviate.classes.config import Property, DataType
 from weaviate.classes.config import Configure
+from weaviate.classes.query import Filter
 
 class WeaviateRAGService:
-    def __init__(self, collection_name: str = "documents"):
-        self.weavclient = weaviate.connect_to_local()
+    def __init__(self, collection_name: str = "Documents"):
+        self.client = weaviate.connect_to_local()
         self.collection_name = collection_name
 
         self._setup_collection()
 
     def _setup_collection(self):
         try:
-            if  self.weavclient.collections.exists(self.collection_name):
+            if  self.client.collections.exists(self.collection_name):
                 return
-            self.weavclient.collections.create(
+            self.client.collections.create(
                 name=self.collection_name,
                 vectorizer_config=Configure.Vectorizer.text2vec_transformers(),
                 properties=[
@@ -41,6 +42,7 @@ class WeaviateRAGService:
                         skip_vectorization=True,
                     ),
                 ],
+                vector_index_config=Configure.VectorIndex.hnsw()
             )
 
             print(f"Collection {self.collection_name} created successfully")
@@ -64,7 +66,7 @@ class WeaviateRAGService:
         return chunks
 
     def index_document(self, text: str, file_name: str, user_id: str):
-        collection = self.weavclient.collections.get(self.collection_name)
+        collection = self.client.collections.get(self.collection_name)
         total_count = 0
 
         try:
@@ -74,7 +76,7 @@ class WeaviateRAGService:
                     batch.add_object(
                         properties={
                             "content": chunk,
-                            "filename": filename,
+                            "filename": file_name,
                             "chunk_id": i,
                             "user_id": user_id
                         }
@@ -85,3 +87,16 @@ class WeaviateRAGService:
             raise
 
         return total_count
+
+    def search_user_documents(self, query: str, user_id: str, limit: int = 1):
+        collection = self.client.collections.get(self.collection_name)
+
+        response = collection.query.near_text(
+            query=query,
+            filters=Filter.by_property("user_id").equal(str(user_id)),
+            limit=limit
+        )
+        return [obj.properties["content"] for obj in response.objects]
+
+    def close(self):
+        self.client.close()
