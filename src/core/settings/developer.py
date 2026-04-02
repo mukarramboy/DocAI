@@ -1,7 +1,6 @@
 from .base import *
 
 DEBUG = True
+SECRET_KEY = "SecretKey"
 
-CORS_ALLOWED_ORIGINS = [
-    "*"
-]
+CORS_ALLOW_ALL_ORIGINS = True

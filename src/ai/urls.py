@@ -1,9 +1,9 @@
 from django.urls import path
 
-from .views import UploadDocumentView, ChatView
+from .views import UploadDocument1View, ChatView
 
 
 urlpatterns = [
-    path("upload/", UploadDocumentView.as_view(), name="upload-document"),
+    path("upload/", UploadDocument1View.as_view(), name="upload-document"),
     path("chat/", ChatView.as_view(), name="chat"),
 ]
