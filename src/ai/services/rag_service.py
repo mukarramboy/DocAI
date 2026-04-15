@@ -30,7 +30,7 @@ class WeaviateRAGService:
                         skip_vectorization=True,
                     ),
                     Property(
-                        name="chank_id",
+                        name="chunk_id",
                         data_type=DataType.INT,
                         description="Chunk number within the file",
                         skip_vectorization=True,
@@ -90,13 +90,26 @@ class WeaviateRAGService:
 
     def search_user_documents(self, query: str, user_id: str, limit: int = 1):
         collection = self.client.collections.get(self.collection_name)
-
         response = collection.query.near_text(
             query=query,
             filters=Filter.by_property("user_id").equal(str(user_id)),
             limit=limit
         )
-        return [obj.properties["content"] for obj in response.objects]
+        results = []
+        for obj in getattr(response, "objects", []) or []:
+            props = getattr(obj, "properties", None)
+            if props:
+                results.append(props.get("content"))
+        return results
 
     def close(self):
         self.client.close()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            self.close()
+        except Exception as e:
+            pass

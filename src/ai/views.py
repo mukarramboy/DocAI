@@ -6,52 +6,10 @@ from rest_framework import status
 
 from .services.rag_service import WeaviateRAGService
 from .serializers import DocumentSerializer
+from .tasks import indexer_document
 
-# class UploadDocumentView(APIView):
-#     permission_classes = [IsAuthenticated]
-
-#     def post(self, request):
-#         file = request.FILES.get("file")
-#         if not file:
-#             return Response({"error": "File required"}, status=status.HTTP_400_BAD_REQUEST)
-
-#         # 1. Проверка расширения
-#         if not file.name.endswith((".txt", ".md", ".csv")):
-#             return Response({"error": "Unsupported file type"}, status=status.HTTP_400_BAD_REQUEST)
-
-#         # 2. Ограничение размера (5 MB)
-#         if file.size > 5 * 1024 * 1024:
-#             return Response({"error": "File too large (max 5MB)"}, status=status.HTTP_400_BAD_REQUEST)
-
-#         # 3. Безопасное чтение с обработкой ошибок декодирования
-#         try:
-#             text = file.read().decode("utf-8")
-#         except UnicodeDecodeError:
-#             return Response({"error": "File must be UTF-8 encoded"}, status=status.HTTP_400_BAD_REQUEST)
-
-#         if not text.strip():
-#             return Response({"error": "File is empty"}, status=status.HTTP_400_BAD_REQUEST)
-
-#         # 4. Индексация с обработкой ошибок Weaviate
-#         try:
-#             rag = WeaviateRAGService()
-#             count_chunks = rag.index_document(
-#                 text=text,
-#                 file_name=file.name,
-#                 user_id=str(request.user.id),
-#             )
-#         except Exception as e:
-#             import traceback
-#             traceback.print_exc()  # выведет полный traceback в консоль Django
-#             return Response({"error": f"Indexing failed: {str(e)}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
-#         data = {
-#             "message": "Document indexed",
-#             "file_name": file.name,
-#             "chunks": count_chunks  ,
-#         }
-
-#         return Response(data, status=201)
+ALLOWED_EXTENSIONS = ('.pdf', '.txt', '.docx', '.md')
+MAX_UPLOAD_SIZE = 5 * 1024 * 1024
 
 class UploadDocument1View(APIView):
     permission_classes = [IsAuthenticated]
@@ -59,23 +17,20 @@ class UploadDocument1View(APIView):
     def post(self, request):
         serializer = DocumentSerializer(data=request.data)
         if serializer.is_valid():
-            file = request.FILES.get("file")
+            file = serializer.validated_data.get("file")
             user_id = request.user.id
-            weaviate_service = WeaviateRAGService()
             try:
                 text = file.read().decode("utf-8")
 
-                chunks_count = weaviate_service.index_document(text, file.name, str(user_id))
+                task = indexer_document.delay(text, file.name, str(user_id))
 
                 return Response({
-                    "message": "Документ успешно проиндексирован",
-                    "chunks_created": chunks_count,
+                    "success": True,
+                    "task": task.id,
                     "filename": file.name
                 }, status=status.HTTP_201_CREATED)
             except Exception as e:
                 return Response({"error": f"Upload failed: {str(e)}"}, status=400)
-            finally:
-                weaviate_service.close()
         return Response(serializer.errors, status=400)
 
 class ChatView(APIView):
@@ -85,12 +40,13 @@ class ChatView(APIView):
     def post(self, request):
 
         query = request.data.get("query")
+        if not query and str(query).strip():
+            return Response({"status": False}, status=status.HTTP_400_BAD_REQUEST)
 
-        weaviate_service = WeaviateRAGService()
-        results = weaviate_service.search_user_documents(
-            query=query,
-            user_id=request.user.id
-        )
-        weaviate_service.close()
+        try:
+            with WeaviateRAGService() as weaviate_service:
+                results = weaviate_service.search_user_documents(query=query, user_id=request.user.id, limit=3)
+        except Exception as e:
+            return Response({"status": False, "message": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
-        return Response({"query": query, "results": results})
+        return Response({"query": query, "results": results}, status=status.HTTP_200_OK)
