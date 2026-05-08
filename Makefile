@@ -16,7 +16,7 @@
 
 # Resolve appropriate command at parse time: prefer `uv` if installed.
 PY := $(shell command -v uv >/dev/null 2>&1 && echo "uv run python" || echo "python")
-PYTEST := $(shell command -v uv >/dev/null 2>&1 && echo "uv run pytest" || echo "python -m pytest")
+PYTEST := $(shell command -v uv >/dev/null 2>&1 && echo "uv run python -m pytest" || echo "python -m pytest")
 RUFF := $(shell command -v uv >/dev/null 2>&1 && echo "uv run ruff" || echo "python -m ruff")
 
 .PHONY: run migrate makemigrations test lint format ci
