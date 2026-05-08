@@ -1,4 +1,3 @@
-import re
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -7,9 +6,8 @@ from rest_framework import status
 from .services.rag_service import WeaviateRAGService
 from .serializers import DocumentSerializer
 from .tasks import indexer_document
+from django.core.files.uploadedfile import UploadedFile
 
-ALLOWED_EXTENSIONS = ('.pdf', '.txt', '.docx', '.md')
-MAX_UPLOAD_SIZE = 5 * 1024 * 1024
 
 class UploadDocument1View(APIView):
     permission_classes = [IsAuthenticated]
@@ -17,20 +15,21 @@ class UploadDocument1View(APIView):
     def post(self, request):
         serializer = DocumentSerializer(data=request.data)
         if serializer.is_valid():
-            file = serializer.validated_data.get("file")
+            file: UploadedFile = serializer.validated_data["file"]  # type: ignore
             user_id = request.user.id
             try:
                 text = file.read().decode("utf-8")
+            except UnicodeDecodeError:
+                return Response({"error": "Upload failed: invalid UTF-8 encoding"}, status=400)
 
-                task = indexer_document.delay(text, file.name, str(user_id))
+            task = indexer_document.delay(text, file.name, str(user_id))  # type: ignore
 
-                return Response({
-                    "success": True,
-                    "task": task.id,
-                    "filename": file.name
-                }, status=status.HTTP_201_CREATED)
-            except Exception as e:
-                return Response({"error": f"Upload failed: {str(e)}"}, status=400)
+            return Response({
+                "success": True,
+                "task": task.id,
+                "filename": file.name
+            }, status=status.HTTP_201_CREATED)
+
         return Response(serializer.errors, status=400)
 
 class ChatView(APIView):
